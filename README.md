@@ -1,3 +1,5 @@
+<img src="./rt1.png" width="450px"></img>
+
 ## Robotic Transformer - Pytorch (wip)
 
 Implementation of <a href="https://ai.googleblog.com/2022/12/rt-1-robotics-transformer-for-real.html">RT1 (Robotic Transformer)</a>, from the Robotics at Google team, in Pytorch

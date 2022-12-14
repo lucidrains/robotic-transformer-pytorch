@@ -18,6 +18,7 @@ setup(
     'robotics'
   ],
   install_requires=[
+    'classifier-free-guidance-pytorch',
     'einops>=0.4',
     'torch>=1.6',
   ],

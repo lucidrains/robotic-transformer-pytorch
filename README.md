@@ -31,6 +31,7 @@ vit = MaxViT(
 model = RT1(
     vit = vit,
     num_actions = 11,
+    action_bins = 256,
     depth = 6,
     heads = 8,
     dim_head = 64,
@@ -38,7 +39,7 @@ model = RT1(
 
 video = torch.randn(1, 3, 6, 224, 224)
 
-pred = model(video) # (1, 6, 11) # (batch, frames, action logits)
+pred = model(video) # (1, 6, 11, 256) # (batch, frames, actions, bins)
 ```
 
 ## Citations

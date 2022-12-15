@@ -463,6 +463,7 @@ class RT1(nn.Module):
         *,
         vit: MaxViT,
         num_actions = 11,
+        action_bins = 256,
         depth = 6,
         heads = 8,
         dim_head = 64,
@@ -491,7 +492,8 @@ class RT1(nn.Module):
 
         self.to_logits = nn.Sequential(
             nn.LayerNorm(vit.embed_dim),
-            nn.Linear(vit.embed_dim, num_actions)
+            nn.Linear(vit.embed_dim, num_actions * action_bins),
+            Rearrange('... (a b) -> ... a b', b = action_bins)
         )
 
     def forward(self, video):

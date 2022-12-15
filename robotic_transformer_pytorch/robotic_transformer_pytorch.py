@@ -39,12 +39,21 @@ class Residual(nn.Module):
     def forward(self, x):
         return self.fn(x) + x
 
+class LayerNorm(nn.Module):
+    def __init__(self, dim):
+        super().__init__()
+        self.gamma = nn.Parameter(torch.ones(dim))
+        self.register_buffer("beta", torch.zeros(dim))
+
+    def forward(self, x):
+        return F.layer_norm(x, x.shape[-1:], self.gamma, self.beta)
+
 class FeedForward(nn.Module):
     def __init__(self, dim, mult = 4, dropout = 0.):
         super().__init__()
         inner_dim = int(dim * mult)
         self.net = nn.Sequential(
-            nn.LayerNorm(dim),
+            LayerNorm(dim),
             nn.Linear(dim, inner_dim),
             nn.GELU(),
             nn.Dropout(dropout),
@@ -141,7 +150,7 @@ class Attention(nn.Module):
         super().__init__()
         assert (dim % dim_head) == 0, 'dimension should be divisible by dimension per head'
 
-        self.norm = nn.LayerNorm(dim)
+        self.norm = LayerNorm(dim)
 
         self.heads = dim // dim_head
         self.scale = dim_head ** -0.5
@@ -304,7 +313,7 @@ class MaxViT(nn.Module):
 
         self.mlp_head = nn.Sequential(
             Reduce('b d h w -> b d', 'mean'),
-            nn.LayerNorm(embed_dim),
+            LayerNorm(embed_dim),
             nn.Linear(embed_dim, num_classes)
         )
 
@@ -354,7 +363,7 @@ class TransformerAttention(nn.Module):
 
         dim_context = default(dim_context, dim)
 
-        self.norm = nn.LayerNorm(dim)
+        self.norm = LayerNorm(dim)
         self.context_norm = LayerNorm(dim_context) if norm_context else nn.Identity()
 
         self.attn_dropout = nn.Dropout(dropout)
@@ -520,7 +529,7 @@ class RT1(nn.Module):
         self.cond_drop_prob = cond_drop_prob
 
         self.to_logits = nn.Sequential(
-            nn.LayerNorm(vit.embed_dim),
+            LayerNorm(vit.embed_dim),
             nn.Linear(vit.embed_dim, num_actions * action_bins),
             Rearrange('... (a b) -> ... a b', b = action_bins)
         )

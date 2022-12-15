@@ -49,6 +49,11 @@ pred.shape # (1, 6, 11, 256) # (batch, frames, actions, bins)
 - <a href="https://stability.ai/">Stability.ai</a> for the generous sponsorship to work and open source cutting edge artificial intelligence research
 
 
+## Todo
+
+- [ ] add classifier free guidance option
+- [ ] add cross attention based conditioning
+
 ## Citations
 
 ```bibtex

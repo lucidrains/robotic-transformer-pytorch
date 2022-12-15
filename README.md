@@ -31,18 +31,21 @@ vit = MaxViT(
 model = RT1(
     vit = vit,
     num_actions = 11,
-    action_bins = 256,
     depth = 6,
     heads = 8,
     dim_head = 64,
-    cond_drop_prob = 0.25  # classifier free guidance conditional dropout
+    cond_drop_prob = 0.2
 )
 
 video = torch.randn(1, 3, 6, 224, 224)
 instructions = ['bring me that apple sitting on the table']
 
-pred = model(video, instructions, cond_scale = 3) # classifier free guidance by scale of 3 times. 1 means disabled
-pred.shape # (1, 6, 11, 256) # (batch, frames, actions, bins)
+train_logits = model(video, instructions) # (1, 6, 11) # (batch, frames, action logits)
+
+# after much training
+
+eval_logits = model(video, instructions, cond_scale = 3.) # classifier free guidance with conditional scale of 3
+
 ```
 
 ## Appreciation

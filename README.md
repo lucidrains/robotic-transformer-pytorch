@@ -38,8 +38,10 @@ model = RT1(
 )
 
 video = torch.randn(1, 3, 6, 224, 224)
+instructions = ['bring me that apple sitting on the table']
 
-pred = model(video) # (1, 6, 11, 256) # (batch, frames, actions, bins)
+pred = model(video, instructions)
+pred.shape # (1, 6, 11, 256) # (batch, frames, actions, bins)
 ```
 
 ## Appreciation

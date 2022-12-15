@@ -2,10 +2,15 @@ import torch
 import torch.nn.functional as F
 from torch import nn, einsum
 
+from typing import List, Optional
+from beartype import beartype
+
 from einops import pack, unpack, repeat, reduce, rearrange
 from einops.layers.torch import Rearrange, Reduce
 
 from functools import partial
+
+from classifier_free_guidance_pytorch import TextConditioner
 
 # helpers
 
@@ -256,10 +261,14 @@ class MaxViT(nn.Module):
 
         # iterate through stages
 
+        cond_hidden_dims = []
+
         for ind, ((layer_dim_in, layer_dim), layer_depth) in enumerate(zip(dim_pairs, depth)):
             for stage_ind in range(layer_depth):
                 is_first = stage_ind == 0
                 stage_dim_in = layer_dim_in if is_first else layer_dim
+
+                cond_hidden_dims.append(stage_dim_in)
 
                 block = nn.Sequential(
                     MBConv(
@@ -285,6 +294,12 @@ class MaxViT(nn.Module):
         embed_dim = dims[-1]
         self.embed_dim = dims[-1]
 
+        # text conditioner
+
+        self.conditioner = TextConditioner(
+            hidden_dims = tuple(cond_hidden_dims)
+        )
+
         # mlp head out
 
         self.mlp_head = nn.Sequential(
@@ -293,14 +308,23 @@ class MaxViT(nn.Module):
             nn.Linear(embed_dim, num_classes)
         )
 
+    @beartype
     def forward(
         self,
         x,
+        texts: Optional[List[str]] = None,
         return_embeddings = False
     ):
         x = self.conv_stem(x)
 
-        for stage in self.layers:
+        cond_fns = (None,) * len(self.layers)
+        if exists(texts):
+            cond_fns = self.conditioner(texts)
+
+        for stage, cond_fn in zip(self.layers, cond_fns):
+            if exists(cond_fn):
+                x = cond_fn(x)
+
             x = stage(x)
 
         if return_embeddings:
@@ -457,6 +481,7 @@ class TokenLearner(nn.Module):
 
 # Robotic Transformer
 
+@beartype
 class RT1(nn.Module):
     def __init__(
         self,
@@ -496,13 +521,13 @@ class RT1(nn.Module):
             Rearrange('... (a b) -> ... a b', b = action_bins)
         )
 
-    def forward(self, video):
+    def forward(self, video, texts: Optional[List[str]] = None):
         frames, device = video.shape[2], video.device
 
         video = rearrange(video, 'b c f h w -> b f c h w')
         images, packed_shape = pack_one(video, '* c h w')
 
-        tokens = self.vit(images, return_embeddings = True)
+        tokens = self.vit(images, texts = texts, return_embeddings = True)
 
         tokens = unpack_one(tokens, packed_shape, '* c h w')
         learned_tokens = self.token_learner(tokens)

@@ -10,7 +10,7 @@ from einops.layers.torch import Rearrange, Reduce
 
 from functools import partial
 
-from classifier_free_guidance_pytorch import TextConditioner
+from classifier_free_guidance_pytorch import TextConditioner, classifier_free_guidance
 
 # helpers
 
@@ -313,13 +313,14 @@ class MaxViT(nn.Module):
         self,
         x,
         texts: Optional[List[str]] = None,
+        cond_drop_prob = 0.,
         return_embeddings = False
     ):
         x = self.conv_stem(x)
 
         cond_fns = (None,) * len(self.layers)
         if exists(texts):
-            cond_fns = self.conditioner(texts)
+            cond_fns = self.conditioner(texts, cond_drop_prob = cond_drop_prob)
 
         for stage, cond_fn in zip(self.layers, cond_fns):
             if exists(cond_fn):
@@ -495,6 +496,7 @@ class RT1(nn.Module):
         token_learner_ff_mult = 2,
         token_learner_num_layers = 2,
         token_learner_num_output_tokens = 8,
+        cond_drop_prob = 0.2
     ):
         super().__init__()
         self.vit = vit
@@ -515,19 +517,34 @@ class RT1(nn.Module):
             depth = depth
         )
 
+        self.cond_drop_prob = cond_drop_prob
+
         self.to_logits = nn.Sequential(
             nn.LayerNorm(vit.embed_dim),
             nn.Linear(vit.embed_dim, num_actions * action_bins),
             Rearrange('... (a b) -> ... a b', b = action_bins)
         )
 
-    def forward(self, video, texts: Optional[List[str]] = None):
+    @classifier_free_guidance
+    def forward(
+        self,
+        video,
+        texts: Optional[List[str]] = None,
+        cond_drop_prob = 0.
+    ):
+        cond_drop_prob = default(cond_drop_prob, self.cond_drop_prob)
+
         frames, device = video.shape[2], video.device
 
         video = rearrange(video, 'b c f h w -> b f c h w')
         images, packed_shape = pack_one(video, '* c h w')
 
-        tokens = self.vit(images, texts = texts, return_embeddings = True)
+        tokens = self.vit(
+            images,
+            texts = texts,
+            cond_drop_prob = cond_drop_prob,
+            return_embeddings = True
+        )
 
         tokens = unpack_one(tokens, packed_shape, '* c h w')
         learned_tokens = self.token_learner(tokens)

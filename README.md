@@ -35,12 +35,13 @@ model = RT1(
     depth = 6,
     heads = 8,
     dim_head = 64,
+    cond_drop_prob = 0.25  # classifier free guidance conditional dropout
 )
 
 video = torch.randn(1, 3, 6, 224, 224)
 instructions = ['bring me that apple sitting on the table']
 
-pred = model(video, instructions)
+pred = model(video, instructions, cond_scale = 3) # classifier free guidance by scale of 3 times. 1 means disabled
 pred.shape # (1, 6, 11, 256) # (batch, frames, actions, bins)
 ```
 
@@ -51,7 +52,7 @@ pred.shape # (1, 6, 11, 256) # (batch, frames, actions, bins)
 
 ## Todo
 
-- [ ] add classifier free guidance option
+- [x] add classifier free guidance option
 - [ ] add cross attention based conditioning
 
 ## Citations

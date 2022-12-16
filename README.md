@@ -37,10 +37,14 @@ model = RT1(
     cond_drop_prob = 0.2
 )
 
-video = torch.randn(1, 3, 6, 224, 224)
-instructions = ['bring me that apple sitting on the table']
+video = torch.randn(2, 3, 6, 224, 224)
 
-train_logits = model(video, instructions) # (1, 6, 11, 256) # (batch, frames, actions, bins)
+instructions = [
+    'bring me that apple sitting on the table',
+    'please pass the butter'
+]
+
+train_logits = model(video, instructions) # (2, 6, 11, 256) # (batch, frames, actions, bins)
 
 # after much training
 

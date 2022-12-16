@@ -340,7 +340,11 @@ class MaxViT(nn.Module):
 
         cond_fns = (None,) * len(self.layers)
         if exists(texts):
-            cond_fns = self.conditioner(texts, cond_drop_prob = cond_drop_prob)
+            cond_fns = self.conditioner(
+                texts,
+                cond_drop_prob = cond_drop_prob,
+                repeat_batch = x.shape[0] // len(texts) # text conditioning across multiple frames of video
+            )
 
         for stage, cond_fn in zip(self.layers, cond_fns):
             if exists(cond_fn):

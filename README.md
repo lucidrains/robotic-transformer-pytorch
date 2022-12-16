@@ -40,7 +40,7 @@ model = RT1(
 video = torch.randn(1, 3, 6, 224, 224)
 instructions = ['bring me that apple sitting on the table']
 
-train_logits = model(video, instructions) # (1, 6, 11) # (batch, frames, action logits)
+train_logits = model(video, instructions) # (1, 6, 11, 256) # (batch, frames, actions, bins)
 
 # after much training
 

@@ -63,15 +63,22 @@ class FeedForward(nn.Module):
     def __init__(self, dim, mult = 4, dropout = 0.):
         super().__init__()
         inner_dim = int(dim * mult)
+        self.norm = LayerNorm(dim)
+
         self.net = nn.Sequential(
-            LayerNorm(dim),
             nn.Linear(dim, inner_dim),
             nn.GELU(),
             nn.Dropout(dropout),
             nn.Linear(inner_dim, dim),
             nn.Dropout(dropout)
         )
-    def forward(self, x):
+    def forward(self, x, cond_fn = None):
+        x = self.norm(x)
+
+        if exists(cond_fn):
+            # adaptive layernorm
+            x = cond_fn(x)
+
         return self.net(x)
 
 # MBConv
@@ -461,11 +468,13 @@ class Transformer(nn.Module):
         attn_mask = None
     ):
         if not exists(cond_fns):
-            cond_fns = (None,) * len(self.layers)
+            cond_fns = (None,) * len(self.layers * 2)
 
-        for (attn, ff), cond_fn in zip(self.layers, cond_fns):
-             x = attn(x, attn_mask = attn_mask, cond_fn = cond_fn) + x
-             x = ff(x) + x
+        cond_fns = iter(cond_fns)
+
+        for attn, ff in self.layers:
+             x = attn(x, attn_mask = attn_mask, cond_fn = next(cond_fns)) + x
+             x = ff(x, cond_fn = next(cond_fns)) + x
         return x
 
 # token learner module
@@ -530,8 +539,8 @@ class RT1(nn.Module):
         self.num_vit_stages = len(vit.cond_hidden_dims)
 
         self.conditioner = TextConditioner(
-            hidden_dims = (*tuple(vit.cond_hidden_dims), *((vit.embed_dim,) * depth)),
-            hiddens_channel_first = (*((True,) * self.num_vit_stages), *((False,) * depth)),
+            hidden_dims = (*tuple(vit.cond_hidden_dims), *((vit.embed_dim,) * depth * 2)),
+            hiddens_channel_first = (*((True,) * self.num_vit_stages), *((False,) * depth * 2)),
             cond_drop_prob = cond_drop_prob
         )
 
@@ -576,10 +585,10 @@ class RT1(nn.Module):
         cond_fns = self.conditioner(
             texts,
             cond_drop_prob = cond_drop_prob,
-            repeat_batch = (*((frames,) * self.num_vit_stages), *((1,) * self.transformer_depth))
+            repeat_batch = (*((frames,) * self.num_vit_stages), *((1,) * self.transformer_depth * 2))
         )
 
-        vit_cond_fns, transformer_cond_fns = cond_fns[:-depth], cond_fns[-depth:]
+        vit_cond_fns, transformer_cond_fns = cond_fns[:-(depth * 2)], cond_fns[-(depth * 2):]
 
         video = rearrange(video, 'b c f h w -> b f c h w')
         images, packed_shape = pack_one(video, '* c h w')

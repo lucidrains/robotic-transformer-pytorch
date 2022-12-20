@@ -81,3 +81,14 @@ eval_logits = model(video, instructions, cond_scale = 3.) # classifier free guid
     year    = {2022}
 }
 ```
+
+```bibtex
+@misc{peebles2022scalable,
+    title   = {Scalable Diffusion Models with Transformers},
+    author  = {William Peebles and Saining Xie},
+    year    = {2022},
+    eprint  = {2212.09748},
+    archivePrefix = {arXiv},
+    primaryClass = {cs.CV}
+}
+```

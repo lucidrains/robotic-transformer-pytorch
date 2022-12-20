@@ -2,7 +2,7 @@ import torch
 import torch.nn.functional as F
 from torch import nn, einsum
 
-from typing import List, Optional
+from typing import List, Optional, Callable, Tuple
 from beartype import beartype
 
 from einops import pack, unpack, repeat, reduce, rearrange
@@ -314,11 +314,7 @@ class MaxViT(nn.Module):
         embed_dim = dims[-1]
         self.embed_dim = dims[-1]
 
-        # text conditioner
-
-        self.conditioner = TextConditioner(
-            hidden_dims = tuple(cond_hidden_dims)
-        )
+        self.cond_hidden_dims = cond_hidden_dims
 
         # mlp head out
 
@@ -333,18 +329,14 @@ class MaxViT(nn.Module):
         self,
         x,
         texts: Optional[List[str]] = None,
+        cond_fns: Optional[Tuple[Callable, ...]] = None,
         cond_drop_prob = 0.,
         return_embeddings = False
     ):
         x = self.conv_stem(x)
 
-        cond_fns = (None,) * len(self.layers)
-        if exists(texts):
-            cond_fns = self.conditioner(
-                texts,
-                cond_drop_prob = cond_drop_prob,
-                repeat_batch = x.shape[0] // len(texts) # text conditioning across multiple frames of video
-            )
+        if not exists(cond_fns):
+            cond_fns = (None,) * len(self.layers)
 
         for stage, cond_fn in zip(self.layers, cond_fns):
             if exists(cond_fn):
@@ -396,7 +388,8 @@ class TransformerAttention(nn.Module):
         context = None,
         mask = None,
         attn_bias = None,
-        attn_mask = None
+        attn_mask = None,
+        cond_fn: Optional[Callable] = None
     ):
         b = x.shape[0]
 
@@ -406,6 +399,10 @@ class TransformerAttention(nn.Module):
         kv_input = default(context, x)
 
         x = self.norm(x)
+
+        if exists(cond_fn):
+            # adaptive layer-norm
+            x = cond_fn(x)
 
         q, k, v = self.to_q(x), *self.to_kv(kv_input).chunk(2, dim = -1)
 
@@ -438,6 +435,7 @@ class TransformerAttention(nn.Module):
         out = rearrange(out, 'b h n d -> b n (h d)')
         return self.to_out(out)
 
+@beartype
 class Transformer(nn.Module):
     def __init__(
         self,
@@ -459,10 +457,14 @@ class Transformer(nn.Module):
     def forward(
         self,
         x,
+        cond_fns: Optional[Tuple[Callable, ...]] = None,
         attn_mask = None
     ):
-        for attn, ff in self.layers:
-             x = attn(x, attn_mask = attn_mask) + x
+        if not exists(cond_fns):
+            cond_fns = (None,) * len(self.layers)
+
+        for (attn, ff), cond_fn in zip(self.layers, cond_fns):
+             x = attn(x, attn_mask = attn_mask, cond_fn = cond_fn) + x
              x = ff(x) + x
         return x
 
@@ -525,6 +527,14 @@ class RT1(nn.Module):
         super().__init__()
         self.vit = vit
 
+        self.num_vit_stages = len(vit.cond_hidden_dims)
+
+        self.conditioner = TextConditioner(
+            hidden_dims = (*tuple(vit.cond_hidden_dims), *((vit.embed_dim,) * depth)),
+            hiddens_channel_first = (*((True,) * self.num_vit_stages), *((False,) * depth)),
+            cond_drop_prob = cond_drop_prob
+        )
+
         self.token_learner = TokenLearner(
             dim = vit.embed_dim,
             ff_mult = token_learner_ff_mult,
@@ -533,6 +543,8 @@ class RT1(nn.Module):
         )
 
         self.num_learned_tokens = token_learner_num_output_tokens
+
+        self.transformer_depth = depth
 
         self.transformer = Transformer(
             dim = vit.embed_dim,
@@ -556,7 +568,18 @@ class RT1(nn.Module):
         texts: Optional[List[str]] = None,
         cond_drop_prob = 0.
     ):
+        depth = self.transformer_depth
         cond_drop_prob = default(cond_drop_prob, self.cond_drop_prob)
+
+        frames = video.shape[2]
+
+        cond_fns = self.conditioner(
+            texts,
+            cond_drop_prob = cond_drop_prob,
+            repeat_batch = (*((frames,) * self.num_vit_stages), *((1,) * self.transformer_depth))
+        )
+
+        vit_cond_fns, transformer_cond_fns = cond_fns[:-depth], cond_fns[-depth:]
 
         frames, device = video.shape[2], video.device
 
@@ -566,6 +589,7 @@ class RT1(nn.Module):
         tokens = self.vit(
             images,
             texts = texts,
+            cond_fns = vit_cond_fns,
             cond_drop_prob = cond_drop_prob,
             return_embeddings = True
         )
@@ -588,7 +612,7 @@ class RT1(nn.Module):
 
         # attention
 
-        attended_tokens = self.transformer(learned_tokens, attn_mask = ~attn_mask)
+        attended_tokens = self.transformer(learned_tokens, cond_fns = transformer_cond_fns, attn_mask = ~attn_mask)
 
         pooled = reduce(attended_tokens, 'b (f n) d -> b f d', 'mean', f = frames)
 

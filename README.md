@@ -61,7 +61,7 @@ eval_logits = model(video, instructions, cond_scale = 3.) # classifier free guid
 ## Todo
 
 - [x] add classifier free guidance option
-- [ ] add cross attention based conditioning
+- [x] add cross attention based conditioning
 
 ## Citations
 

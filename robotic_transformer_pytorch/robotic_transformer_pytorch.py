@@ -10,7 +10,7 @@ from einops.layers.torch import Rearrange, Reduce
 
 from functools import partial
 
-from classifier_free_guidance_pytorch import TextConditioner, classifier_free_guidance
+from classifier_free_guidance_pytorch import TextConditioner, AttentionTextConditioner, classifier_free_guidance
 
 # helpers
 
@@ -531,17 +531,22 @@ class RT1(nn.Module):
         token_learner_ff_mult = 2,
         token_learner_num_layers = 2,
         token_learner_num_output_tokens = 8,
-        cond_drop_prob = 0.2
+        cond_drop_prob = 0.2,
+        use_attn_conditioner = False,
+        conditioner_kwargs: dict = dict()
     ):
         super().__init__()
         self.vit = vit
 
         self.num_vit_stages = len(vit.cond_hidden_dims)
 
-        self.conditioner = TextConditioner(
+        conditioner_klass = AttentionTextConditioner if use_attn_conditioner else TextConditioner
+
+        self.conditioner = conditioner_klass(
             hidden_dims = (*tuple(vit.cond_hidden_dims), *((vit.embed_dim,) * depth * 2)),
             hiddens_channel_first = (*((True,) * self.num_vit_stages), *((False,) * depth * 2)),
-            cond_drop_prob = cond_drop_prob
+            cond_drop_prob = cond_drop_prob,
+            **conditioner_kwargs
         )
 
         self.token_learner = TokenLearner(

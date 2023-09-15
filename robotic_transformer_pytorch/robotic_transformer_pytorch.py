@@ -468,7 +468,7 @@ class Transformer(nn.Module):
         attn_mask = None
     ):
         if not exists(cond_fns):
-            cond_fns = (None,) * len(self.layers * 2)
+            cond_fns = (None,) * len(self.layers) * 2
 
         cond_fns = iter(cond_fns)
 

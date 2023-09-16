@@ -342,10 +342,11 @@ class MaxViT(nn.Module):
     ):
         x = self.conv_stem(x)
 
-        if not exists(cond_fns):
-            cond_fns = (None,) * len(self.layers)
+        cond_fns = iter(default(cond_fns, []))
 
-        for stage, cond_fn in zip(self.layers, cond_fns):
+        for stage in self.layers:
+            cond_fn = next(cond_fns, None)
+
             if exists(cond_fn):
                 x = cond_fn(x)
 
@@ -467,14 +468,11 @@ class Transformer(nn.Module):
         cond_fns: Optional[Tuple[Callable, ...]] = None,
         attn_mask = None
     ):
-        if not exists(cond_fns):
-            cond_fns = (None,) * len(self.layers) * 2
-
-        cond_fns = iter(cond_fns)
+        cond_fns = iter(default(cond_fns, []))
 
         for attn, ff in self.layers:
-             x = attn(x, attn_mask = attn_mask, cond_fn = next(cond_fns)) + x
-             x = ff(x, cond_fn = next(cond_fns)) + x
+             x = attn(x, attn_mask = attn_mask, cond_fn = next(cond_fns, None)) + x
+             x = ff(x, cond_fn = next(cond_fns, None)) + x
         return x
 
 # token learner module

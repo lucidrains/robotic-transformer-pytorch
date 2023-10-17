@@ -163,7 +163,8 @@ class Attention(nn.Module):
         dim,
         dim_head = 32,
         dropout = 0.,
-        window_size = 7
+        window_size = 7,
+        num_mem_kv = 4
     ):
         super().__init__()
         assert (dim % dim_head) == 0, 'dimension should be divisible by dimension per head'
@@ -174,6 +175,8 @@ class Attention(nn.Module):
         self.scale = dim_head ** -0.5
 
         self.to_qkv = nn.Linear(dim, dim * 3, bias = False)
+
+        self.mem_kv = nn.Parameter(torch.randn(2, self.heads, num_mem_kv, dim_head))
 
         self.attend = nn.Sequential(
             nn.Softmax(dim = -1),
@@ -213,11 +216,19 @@ class Attention(nn.Module):
 
         # split heads
 
-        q, k, v = map(lambda t: rearrange(t, 'b n (h d ) -> b h n d', h = h), (q, k, v))
+        q, k, v = map(lambda t: rearrange(t, 'b n (h d) -> b h n d', h = h), (q, k, v))
 
         # scale
 
         q = q * self.scale
+
+        # null / memory / register kv
+
+        mk, mv = map(lambda t: repeat(t, 'h n d -> b h n d', b = q.shape[0]),  self.mem_kv)
+        num_mem = mk.shape[-2]
+
+        k = torch.cat((mk, k), dim = -2)
+        v = torch.cat((mv, v), dim = -2)
 
         # sim
 
@@ -226,6 +237,9 @@ class Attention(nn.Module):
         # add positional bias
 
         bias = self.rel_pos_bias(self.rel_pos_indices)
+
+        bias = F.pad(bias, (0, 0, num_mem, 0), value = 0.)
+
         sim = sim + rearrange(bias, 'i j h -> h i j')
 
         # attention

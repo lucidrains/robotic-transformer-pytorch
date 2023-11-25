@@ -662,8 +662,6 @@ class RT1(nn.Module):
 
         # concat previous actions, for eventual q-transformer at https://github.com/lucidrains/q-transformer
 
-        assert self.concat_action_embeddings ^ (not exists(prev_action_bin_ids))
-
         if self.concat_action_embeddings:
 
             if not exists(prev_action_bin_ids):

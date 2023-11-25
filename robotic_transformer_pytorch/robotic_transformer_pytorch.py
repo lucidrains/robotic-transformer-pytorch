@@ -1,6 +1,6 @@
 import torch
 import torch.nn.functional as F
-from torch import nn, einsum, Tensor
+from torch import nn, einsum
 
 from typing import List, Optional, Callable, Tuple
 from beartype import beartype
@@ -545,43 +545,17 @@ class RT1(nn.Module):
         token_learner_num_output_tokens = 8,
         cond_drop_prob = 0.2,
         use_attn_conditioner = False,
-        conditioner_kwargs: dict = dict(),
-        concat_action_embeddings = False,      # will allow for action embeddings to be concatted just before attention layers - https://arxiv.org/abs/2309.10150 figure 3.
-        action_dim = 16                        # dimension of action embedding, defaults to embedding dimension of maxvit
+        conditioner_kwargs: dict = dict()
     ):
         super().__init__()
-
-        # vit
-
         self.vit = vit
 
         self.num_vit_stages = len(vit.cond_hidden_dims)
 
-        attend_dim = vit.embed_dim
-
-        # q-transformer related action embeddings
-
-        self.num_actions = num_actions
-        self.action_bins = action_bins
-        self.register_buffer('action_bin_offset', action_bins * torch.arange(num_actions), persistent = False)
-
-        action_dim = default(action_dim, vit.embed_dim)
-
-        self.concat_action_embeddings = concat_action_embeddings
-
-        if concat_action_embeddings:
-            all_action_bins = num_actions * action_bins
-            self.action_bin_embeddings = nn.Embedding(all_action_bins + 1, action_dim)
-            self.null_action_bin_id = all_action_bins
-
-            attend_dim = vit.embed_dim + action_dim * num_actions
-
-        # conditioning
-
         conditioner_klass = AttentionTextConditioner if use_attn_conditioner else TextConditioner
 
         self.conditioner = conditioner_klass(
-            hidden_dims = (*tuple(vit.cond_hidden_dims), *((attend_dim,) * depth * 2)),
+            hidden_dims = (*tuple(vit.cond_hidden_dims), *((vit.embed_dim,) * depth * 2)),
             hiddens_channel_first = (*((True,) * self.num_vit_stages), *((False,) * depth * 2)),
             cond_drop_prob = cond_drop_prob,
             **conditioner_kwargs
@@ -599,7 +573,7 @@ class RT1(nn.Module):
         self.transformer_depth = depth
 
         self.transformer = Transformer(
-            dim = attend_dim,
+            dim = vit.embed_dim,
             dim_head = dim_head,
             heads = heads,
             depth = depth
@@ -608,22 +582,17 @@ class RT1(nn.Module):
         self.cond_drop_prob = cond_drop_prob
 
         self.to_logits = nn.Sequential(
-            LayerNorm(attend_dim),
-            nn.Linear(attend_dim, num_actions * action_bins),
+            LayerNorm(vit.embed_dim),
+            nn.Linear(vit.embed_dim, num_actions * action_bins),
             Rearrange('... (a b) -> ... a b', b = action_bins)
         )
-
-    @property
-    def device(self):
-        return next(self.parameters()).device
 
     @classifier_free_guidance
     def forward(
         self,
         video,
         texts: Optional[List[str]] = None,
-        cond_drop_prob = 0.,
-        prev_action_bin_ids: Optional[Tensor] = None
+        cond_drop_prob = 0.
     ):
         depth = self.transformer_depth
         cond_drop_prob = default(cond_drop_prob, self.cond_drop_prob)
@@ -652,29 +621,12 @@ class RT1(nn.Module):
         tokens = unpack_one(tokens, packed_shape, '* c h w')
         learned_tokens = self.token_learner(tokens)
 
-        tokens_per_frame = learned_tokens.shape[-1]
         learned_tokens = rearrange(learned_tokens, 'b f c n -> b (f n) c')
 
         # causal attention mask
 
         attn_mask = torch.ones((frames, frames), dtype = torch.bool, device = device).triu(1)
         attn_mask = repeat(attn_mask, 'i j -> (i r1) (j r2)', r1 = self.num_learned_tokens, r2 = self.num_learned_tokens)
-
-        # concat previous actions, for eventual q-transformer at https://github.com/lucidrains/q-transformer
-
-        if self.concat_action_embeddings:
-
-            if not exists(prev_action_bin_ids):
-                prev_action_bin_ids = torch.full((*learned_tokens.shape[:-1], self.num_actions), self.null_action_bin_id, dtype = torch.long, device = self.device)
-            else:
-                prev_action_bin_ids = self.action_bin_offset + prev_action_bin_ids
-                prev_action_bin_ids = repeat(prev_action_bin_ids, 'b f ... -> b (f n) ...', n = tokens_per_frame)
-
-            action_bin_embed = self.action_bin_embeddings(prev_action_bin_ids)
-
-            action_bin_embed = rearrange(action_bin_embed, '... a d -> ... (a d)')
-
-            learned_tokens = torch.cat((learned_tokens, action_bin_embed), dim = -1)
 
         # sinusoidal positional embedding
 

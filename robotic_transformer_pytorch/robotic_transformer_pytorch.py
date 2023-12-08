@@ -599,7 +599,7 @@ class RT1(nn.Module):
 
         frames, device = video.shape[2], video.device
 
-        cond_fns = self.conditioner(
+        cond_fns, _ = self.conditioner(
             texts,
             cond_drop_prob = cond_drop_prob,
             repeat_batch = (*((frames,) * self.num_vit_stages), *((1,) * self.transformer_depth * 2))

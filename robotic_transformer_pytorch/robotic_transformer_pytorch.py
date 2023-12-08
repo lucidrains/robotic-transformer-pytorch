@@ -1,6 +1,6 @@
 import torch
 import torch.nn.functional as F
-from torch import nn, einsum
+from torch import nn, einsum, Tensor
 
 from typing import List, Optional, Callable, Tuple
 from beartype import beartype
@@ -587,20 +587,27 @@ class RT1(nn.Module):
             Rearrange('... (a b) -> ... a b', b = action_bins)
         )
 
+    def embed_texts(self, texts: List[str]):
+        return self.conditioner.embed_texts(texts)
+
     @classifier_free_guidance
     def forward(
         self,
         video,
         texts: Optional[List[str]] = None,
+        text_embeds: Optional[Tensor] = None,
         cond_drop_prob = 0.
     ):
+        assert exists(texts) ^ exists(text_embeds)
+        cond_kwargs = dict(texts = texts, text_embeds = text_embeds)
+
         depth = self.transformer_depth
         cond_drop_prob = default(cond_drop_prob, self.cond_drop_prob)
 
         frames, device = video.shape[2], video.device
 
         cond_fns, _ = self.conditioner(
-            texts,
+            **cond_kwargs,
             cond_drop_prob = cond_drop_prob,
             repeat_batch = (*((frames,) * self.num_vit_stages), *((1,) * self.transformer_depth * 2))
         )

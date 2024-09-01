@@ -3,7 +3,7 @@ from setuptools import setup, find_packages
 setup(
   name = 'robotic-transformer-pytorch',
   packages = find_packages(exclude=[]),
-  version = '0.2.1',
+  version = '0.2.2',
   license='MIT',
   description = 'Robotic Transformer - Pytorch',
   author = 'Phil Wang',
@@ -19,7 +19,7 @@ setup(
   ],
   install_requires=[
     'classifier-free-guidance-pytorch>=0.4.0',
-    'einops>=0.7',
+    'einops>=0.8',
     'torch>=2.0',
   ],
   classifiers=[
